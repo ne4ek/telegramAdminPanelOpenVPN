@@ -5,7 +5,7 @@ import os
 import glob
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message, FSInputFile
+from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения
@@ -149,46 +149,70 @@ async def cmd_get_all_users(message: Message):
         # Формируем список пользователей
         users_list = "👥 **Список пользователей OpenVPN:**\n\n"
         
+        # Создаем кнопки для каждого файла
+        keyboard_buttons = []
+        
         for i, file_path in enumerate(ovpn_files, 1):
             filename = os.path.basename(file_path)
             username = filename.replace('.ovpn', '')
             
             # Получаем размер файла
             file_size = os.path.getsize(file_path)
-            size_mb = file_size / 1024  # Размер в KB
+            size_kb = file_size / 1024  # Размер в KB
             
-            users_list += f"{i}. **{username}** ({size_mb:.1f} KB)\n"
-        
-        users_list += f"\n📊 **Всего пользователей:** {len(ovpn_files)}"
-        
-        await message.answer(users_list, parse_mode="Markdown")
-        
-        # Отправляем каждый .ovpn файл как документ
-        for file_path in ovpn_files:
-            filename = os.path.basename(file_path)
-            username = filename.replace('.ovpn', '')
+            users_list += f"{i}. **{username}** ({size_kb:.1f} KB)\n"
             
-            try:
-                # Создаем объект файла для отправки
-                file_to_send = FSInputFile(file_path, filename=filename)
-                
-                # Отправляем файл с описанием
-                await message.answer_document(
-                    document=file_to_send,
-                    caption=f"📁 **{username}** - Конфигурация OpenVPN"
+            # Создаем кнопку для скачивания файла
+            keyboard_buttons.append([
+                InlineKeyboardButton(
+                    text=f"📁 {username}",
+                    callback_data=f"download_{username}"
                 )
-                
-            except Exception as e:
-                await message.answer(
-                    f"❌ **Ошибка при отправке файла {filename}:**\n`{str(e)}`",
-                    parse_mode="Markdown"
-                )
+            ])
+        
+        users_list += f"\n📊 **Всего пользователей:** {len(ovpn_files)}\n\n"
+        users_list += "💡 **Нажмите на кнопку ниже для скачивания файла:**"
+        
+        # Создаем клавиатуру
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        
+        await message.answer(users_list, parse_mode="Markdown", reply_markup=keyboard)
                 
     except Exception as e:
         await message.answer(
             f"❌ **Ошибка при получении списка пользователей:**\n\n`{str(e)}`",
             parse_mode="Markdown"
         )
+
+# Обработчик нажатий на кнопки скачивания
+@dp.callback_query(lambda c: c.data.startswith('download_'))
+async def process_download_callback(callback_query: CallbackQuery):
+    try:
+        # Извлекаем имя пользователя из callback_data
+        username = callback_query.data.replace('download_', '')
+        
+        # Путь к файлу
+        file_path = f"/root/ovpns/{username}.ovpn"
+        
+        # Проверяем существование файла
+        if not os.path.exists(file_path):
+            await callback_query.answer("❌ Файл не найден!", show_alert=True)
+            return
+        
+        # Создаем объект файла для отправки
+        file_to_send = FSInputFile(file_path, filename=f"{username}.ovpn")
+        
+        # Отправляем файл
+        await callback_query.message.answer_document(
+            document=file_to_send,
+            caption=f"📁 **{username}** - Конфигурация OpenVPN"
+        )
+        
+        # Подтверждаем нажатие кнопки
+        await callback_query.answer(f"✅ Файл {username}.ovpn отправлен!")
+        
+    except Exception as e:
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 # Обработчик всех остальных сообщений
 @dp.message()
