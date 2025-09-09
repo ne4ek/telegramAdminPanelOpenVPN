@@ -78,13 +78,55 @@ async def cmd_create_user(message: Message):
         success, message_text = user_service.create_user(username)
         
         if success:
+            # Обновляем сообщение о успешном создании
             await status_msg.edit_text(
                 f"✅ **{message_text}**\n\n"
                 f"👤 **Имя пользователя:** `{username}`\n"
                 f"📁 **Файл конфигурации:** `{username}.ovpn`\n\n"
-                f"Файл конфигурации сохранен в рабочей директории сервера.",
+                f"⏳ Отправляю файл конфигурации...",
                 parse_mode="Markdown"
             )
+            
+            # Получаем путь к созданному файлу
+            file_success, file_path, file_error = user_service.get_user_file(username)
+            
+            if file_success:
+                try:
+                    # Создаем объект файла для отправки
+                    file_to_send = FSInputFile(file_path, filename=f"{username}.ovpn")
+                    
+                    # Отправляем файл
+                    await message.answer_document(
+                        document=file_to_send,
+                        caption=f"📁 **{username}** - Конфигурация OpenVPN\n\n"
+                               f"✅ Пользователь создан и файл готов к использованию!"
+                    )
+                    
+                    # Обновляем статус сообщение
+                    await status_msg.edit_text(
+                        f"✅ **{message_text}**\n\n"
+                        f"👤 **Имя пользователя:** `{username}`\n"
+                        f"📁 **Файл конфигурации:** `{username}.ovpn`\n\n"
+                        f"📤 **Файл отправлен выше!**",
+                        parse_mode="Markdown"
+                    )
+                    
+                except Exception as e:
+                    await status_msg.edit_text(
+                        f"✅ **{message_text}**\n\n"
+                        f"👤 **Имя пользователя:** `{username}`\n"
+                        f"📁 **Файл конфигурации:** `{username}.ovpn`\n\n"
+                        f"⚠️ **Файл создан, но не удалось отправить:** `{str(e)}`",
+                        parse_mode="Markdown"
+                    )
+            else:
+                await status_msg.edit_text(
+                    f"✅ **{message_text}**\n\n"
+                    f"👤 **Имя пользователя:** `{username}`\n"
+                    f"📁 **Файл конфигурации:** `{username}.ovpn`\n\n"
+                    f"⚠️ **Файл создан, но не найден для отправки:** `{file_error}`",
+                    parse_mode="Markdown"
+                )
         else:
             await status_msg.edit_text(
                 f"❌ **Ошибка при создании пользователя:**\n\n"
