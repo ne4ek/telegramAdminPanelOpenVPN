@@ -2,9 +2,10 @@ import asyncio
 import logging
 import subprocess
 import os
+import glob
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения
@@ -41,6 +42,7 @@ async def cmd_help(message: Message):
         "/help - Показать это сообщение\n"
         "/info - Информация о сервере\n"
         "/create_user имя - Создать нового пользователя OpenVPN\n"
+        "/get_all_users - Получить список всех пользователей и их .ovpn файлы\n"
     )
 
 # Обработчик команды /info
@@ -119,6 +121,72 @@ async def cmd_create_user(message: Message):
     except Exception as e:
         await message.answer(
             f"❌ **Ошибка выполнения команды:**\n\n`{str(e)}`",
+            parse_mode="Markdown"
+        )
+
+# Обработчик команды /get_all_users
+@dp.message(Command("get_all_users"))
+async def cmd_get_all_users(message: Message):
+    try:
+        # Путь к директории с .ovpn файлами
+        ovpn_dir = "/root/ovpns"
+        
+        # Проверяем существование директории
+        if not os.path.exists(ovpn_dir):
+            await message.answer("❌ **Ошибка:** Директория с .ovpn файлами не найдена!")
+            return
+        
+        # Получаем список всех .ovpn файлов
+        ovpn_files = glob.glob(os.path.join(ovpn_dir, "*.ovpn"))
+        
+        if not ovpn_files:
+            await message.answer("📁 **Список пользователей пуст**\n\nПока нет созданных .ovpn файлов.")
+            return
+        
+        # Сортируем файлы по имени
+        ovpn_files.sort()
+        
+        # Формируем список пользователей
+        users_list = "👥 **Список пользователей OpenVPN:**\n\n"
+        
+        for i, file_path in enumerate(ovpn_files, 1):
+            filename = os.path.basename(file_path)
+            username = filename.replace('.ovpn', '')
+            
+            # Получаем размер файла
+            file_size = os.path.getsize(file_path)
+            size_mb = file_size / 1024  # Размер в KB
+            
+            users_list += f"{i}. **{username}** ({size_mb:.1f} KB)\n"
+        
+        users_list += f"\n📊 **Всего пользователей:** {len(ovpn_files)}"
+        
+        await message.answer(users_list, parse_mode="Markdown")
+        
+        # Отправляем каждый .ovpn файл как документ
+        for file_path in ovpn_files:
+            filename = os.path.basename(file_path)
+            username = filename.replace('.ovpn', '')
+            
+            try:
+                # Создаем объект файла для отправки
+                file_to_send = FSInputFile(file_path, filename=filename)
+                
+                # Отправляем файл с описанием
+                await message.answer_document(
+                    document=file_to_send,
+                    caption=f"📁 **{username}** - Конфигурация OpenVPN"
+                )
+                
+            except Exception as e:
+                await message.answer(
+                    f"❌ **Ошибка при отправке файла {filename}:**\n`{str(e)}`",
+                    parse_mode="Markdown"
+                )
+                
+    except Exception as e:
+        await message.answer(
+            f"❌ **Ошибка при получении списка пользователей:**\n\n`{str(e)}`",
             parse_mode="Markdown"
         )
 
