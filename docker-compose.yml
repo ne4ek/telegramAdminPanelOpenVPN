@@ -1,5 +1,5 @@
 services:
-  telegram_bot_admin_panel_open_voice:
+  telegram_bot_admin_panel_open_vpn:
     build: .
     command: python main.py
     volumes:
