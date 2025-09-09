@@ -4,6 +4,9 @@ services:
     command: python main.py
     volumes:
       - .:/app
+      - /root/openvpn-install.sh:/root/openvpn-install.sh:ro  # Только для чтения
+      - /root/ovpns:/root/ovpns  # Директория с .ovpn файлами на хосте
+      - /etc/openvpn:/etc/openvpn:ro  # OpenVPN конфигурация на хосте
     restart: always
     env_file:
       - .env
