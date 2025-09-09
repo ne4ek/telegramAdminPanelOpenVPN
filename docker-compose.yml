@@ -1,0 +1,9 @@
+services:
+  telegram_bot_admin_panel_open_voice:
+    build: .
+    command: python main.py
+    volumes:
+      - .:/app
+    restart: always
+    env_file:
+      - .env
