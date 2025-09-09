@@ -1,12 +1,10 @@
 import asyncio
 import logging
-import subprocess
-import os
-import glob
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, FSInputFile, CallbackQuery
 from dotenv import load_dotenv
+from services.service_manager import ServiceManager
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -16,7 +14,6 @@ logging.basicConfig(level=logging.INFO)
 
 # Получаем токен бота из переменных окружения
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-HOST = os.getenv('HOST', 'Не указан')
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не найден в переменных окружения!")
@@ -24,6 +21,9 @@ if not BOT_TOKEN:
 # Создаем экземпляры бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+# Создаем менеджер сервисов
+service_manager = ServiceManager()
 
 # Обработчик команды /start
 @dp.message(Command("start"))
@@ -48,18 +48,8 @@ async def cmd_help(message: Message):
 # Обработчик команды /info
 @dp.message(Command("info"))
 async def cmd_info(message: Message):
-    import platform
-    import datetime
-    
-    server_info = (
-        "🖥️ **Информация о сервере:**\n\n"
-        f"🌐 **Хост:** `{HOST}`\n"
-        f"🖥️ **Платформа:** {platform.system()} {platform.release()}\n"
-        f"🐍 **Python:** {platform.python_version()}\n"
-        f"⏰ **Время сервера:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        f"🤖 **Статус бота:** ✅ Работает"
-    )
-    
+    system_service = service_manager.get_system_service()
+    server_info = system_service.format_system_info()
     await message.answer(server_info, parse_mode="Markdown")
 
 # Обработчик команды /create_user
@@ -78,43 +68,26 @@ async def cmd_create_user(message: Message):
     
     username = command_parts[1].strip()
     
-    # Проверяем имя пользователя на валидность
-    if not username.replace('_', '').replace('-', '').isalnum():
-        await message.answer(
-            "❌ **Ошибка:** Имя пользователя может содержать только буквы, цифры, дефисы и подчеркивания!"
-        )
-        return
-    
     try:
         # Отправляем сообщение о начале процесса
         status_msg = await message.answer("⏳ Создаю пользователя...")
         
-        # Выполняем команду добавления пользователя через наш скрипт-обертку
-        cmd = f'bash add_user.sh {username}'
+        # Используем сервис для создания пользователя
+        user_service = service_manager.get_user_service()
+        success, message_text = user_service.create_user(username)
         
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            cwd='/app'  # Рабочая директория в контейнере
-        )
-        
-        if result.returncode == 0:
-            # Успешное создание пользователя
+        if success:
             await status_msg.edit_text(
-                f"✅ **Пользователь успешно создан!**\n\n"
+                f"✅ **{message_text}**\n\n"
                 f"👤 **Имя пользователя:** `{username}`\n"
                 f"📁 **Файл конфигурации:** `{username}.ovpn`\n\n"
                 f"Файл конфигурации сохранен в рабочей директории сервера.",
                 parse_mode="Markdown"
             )
         else:
-            # Ошибка при создании пользователя
-            error_msg = result.stderr if result.stderr else "Неизвестная ошибка"
             await status_msg.edit_text(
                 f"❌ **Ошибка при создании пользователя:**\n\n"
-                f"**Детали:** `{error_msg}`",
+                f"**Детали:** `{message_text}`",
                 parse_mode="Markdown"
             )
             
@@ -128,26 +101,20 @@ async def cmd_create_user(message: Message):
 @dp.message(Command("get_all_users"))
 async def cmd_get_all_users(message: Message):
     try:
-        # Путь к директории с .ovpn файлами
-        ovpn_dir = "/root/ovpns"
+        # Используем сервис для получения списка пользователей
+        user_service = service_manager.get_user_service()
+        success, users, error_message = user_service.get_all_users()
         
-        # Проверяем существование директории
-        if not os.path.exists(ovpn_dir):
-            await message.answer("❌ **Ошибка:** Директория с .ovpn файлами не найдена!")
+        if not success:
+            await message.answer(f"❌ **Ошибка:** {error_message}")
             return
         
-        # Получаем список всех .ovpn файлов
-        ovpn_files = glob.glob(os.path.join(ovpn_dir, "*.ovpn"))
-        
-        if not ovpn_files:
+        if not users:
             await message.answer("📁 **Список пользователей пуст**\n\nПока нет созданных .ovpn файлов.")
             return
         
-        # Сортируем файлы по имени
-        ovpn_files.sort()
-        
         # Показываем первую страницу
-        await show_users_page(message, ovpn_files, 0)
+        await show_users_page(message, users, 0)
                 
     except Exception as e:
         await message.answer(
@@ -156,80 +123,16 @@ async def cmd_get_all_users(message: Message):
         )
 
 # Функция для отображения страницы пользователей
-async def show_users_page(message: Message, ovpn_files: list, page: int = 0, edit_message: bool = False):
+async def show_users_page(message: Message, users: list, page: int = 0, edit_message: bool = False):
     try:
-        files_per_page = 10
-        total_files = len(ovpn_files)
-        total_pages = (total_files + files_per_page - 1) // files_per_page
+        # Используем сервис для работы с файлами
+        file_service = service_manager.get_file_service()
         
-        # Вычисляем индексы для текущей страницы
-        start_idx = page * files_per_page
-        end_idx = min(start_idx + files_per_page, total_files)
+        # Создаем текст списка пользователей
+        users_list = file_service.create_files_list_text(users, page)
         
-        # Получаем файлы для текущей страницы
-        page_files = ovpn_files[start_idx:end_idx]
-        
-        # Формируем список пользователей для текущей страницы
-        users_list = f"👥 **Список пользователей OpenVPN** (стр. {page + 1}/{total_pages}):\n\n"
-        
-        # Создаем кнопки для файлов текущей страницы
-        keyboard_buttons = []
-        
-        for i, file_path in enumerate(page_files, start_idx + 1):
-            filename = os.path.basename(file_path)
-            username = filename.replace('.ovpn', '')
-            
-            # Получаем размер файла
-            file_size = os.path.getsize(file_path)
-            size_kb = file_size / 1024  # Размер в KB
-            
-            users_list += f"{i}. **{username}** ({size_kb:.1f} KB)\n"
-            
-            # Создаем кнопку для скачивания файла
-            keyboard_buttons.append([
-                InlineKeyboardButton(
-                    text=f"📁 {username}",
-                    callback_data=f"download_{username}"
-                )
-            ])
-        
-        users_list += f"\n📊 **Всего пользователей:** {total_files}\n"
-        users_list += "💡 **Нажмите на кнопку ниже для скачивания файла:**"
-        
-        # Добавляем кнопки навигации
-        navigation_buttons = []
-        
-        if total_pages > 1:
-            # Кнопки навигации
-            nav_row = []
-            
-            # Кнопка "Назад"
-            if page > 0:
-                nav_row.append(InlineKeyboardButton(
-                    text="⬅️ Назад",
-                    callback_data=f"page_{page - 1}"
-                ))
-            
-            # Информация о странице
-            nav_row.append(InlineKeyboardButton(
-                text=f"{page + 1}/{total_pages}",
-                callback_data="page_info"
-            ))
-            
-            # Кнопка "Вперед"
-            if page < total_pages - 1:
-                nav_row.append(InlineKeyboardButton(
-                    text="Вперед ➡️",
-                    callback_data=f"page_{page + 1}"
-                ))
-            
-            navigation_buttons.append(nav_row)
-        
-        # Объединяем кнопки файлов и навигации
-        all_buttons = keyboard_buttons + navigation_buttons
-        
-        # Создаем клавиатуру
-        keyboard = InlineKeyboardMarkup(inline_keyboard=all_buttons)
+        # Создаем клавиатуру с пагинацией
+        keyboard = file_service.create_pagination_keyboard(users, page)
         
         if edit_message:
             await message.edit_text(users_list, parse_mode="Markdown", reply_markup=keyboard)
@@ -249,12 +152,12 @@ async def process_download_callback(callback_query: CallbackQuery):
         # Извлекаем имя пользователя из callback_data
         username = callback_query.data.replace('download_', '')
         
-        # Путь к файлу
-        file_path = f"/root/ovpns/{username}.ovpn"
+        # Используем сервис для получения файла пользователя
+        user_service = service_manager.get_user_service()
+        success, file_path, error_message = user_service.get_user_file(username)
         
-        # Проверяем существование файла
-        if not os.path.exists(file_path):
-            await callback_query.answer("❌ Файл не найден!", show_alert=True)
+        if not success:
+            await callback_query.answer(f"❌ {error_message}", show_alert=True)
             return
         
         # Создаем объект файла для отправки
@@ -285,13 +188,16 @@ async def process_page_callback(callback_query: CallbackQuery):
         
         page = int(page_data)
         
-        # Получаем список всех .ovpn файлов
-        ovpn_dir = "/root/ovpns"
-        ovpn_files = glob.glob(os.path.join(ovpn_dir, "*.ovpn"))
-        ovpn_files.sort()
+        # Получаем список всех пользователей через сервис
+        user_service = service_manager.get_user_service()
+        success, users, error_message = user_service.get_all_users()
+        
+        if not success:
+            await callback_query.answer(f"❌ {error_message}", show_alert=True)
+            return
         
         # Показываем нужную страницу
-        await show_users_page(callback_query.message, ovpn_files, page, edit_message=True)
+        await show_users_page(callback_query.message, users, page, edit_message=True)
         
         # Подтверждаем нажатие кнопки
         await callback_query.answer(f"📄 Страница {page + 1}")
