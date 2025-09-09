@@ -2,11 +2,12 @@ services:
   telegram_bot_admin_panel_open_vpn:
     build: .
     command: python main.py
+    user: "0:0"  # Запускаем от root для доступа к OpenVPN
     volumes:
       - .:/app
       - /root/openvpn-install.sh:/root/openvpn-install.sh:ro  # Только для чтения
       - /root/ovpns:/root/ovpns  # Директория с .ovpn файлами на хосте
-      - /etc/openvpn:/etc/openvpn:ro  # OpenVPN конфигурация на хосте
+      - /etc/openvpn:/etc/openvpn  # OpenVPN конфигурация на хосте (не только чтение)
     restart: always
     env_file:
       - .env

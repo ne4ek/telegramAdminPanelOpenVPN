@@ -27,6 +27,10 @@ fi
 # Переходим в директорию easy-rsa
 cd /etc/openvpn/server/easy-rsa/
 
+# Устанавливаем правильные права доступа для pki директории
+chmod -R 755 pki/
+chown -R root:root pki/
+
 # Создаем сертификат для пользователя
 echo "Создаю сертификат для пользователя: $USERNAME"
 ./easyrsa --batch --days=3650 build-client-full "$USERNAME" nopass
