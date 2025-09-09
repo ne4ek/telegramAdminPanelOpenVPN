@@ -1,6 +1,7 @@
 from .user_service import UserService
 from .file_service import FileService
 from .system_service import SystemService
+from .auth_service import AuthService
 
 
 class ServiceManager:
@@ -10,6 +11,7 @@ class ServiceManager:
         self.user_service = UserService()
         self.file_service = FileService()
         self.system_service = SystemService()
+        self.auth_service = AuthService()
     
     def get_user_service(self) -> UserService:
         """Получает сервис для работы с пользователями"""
@@ -22,3 +24,7 @@ class ServiceManager:
     def get_system_service(self) -> SystemService:
         """Получает сервис для работы с системной информацией"""
         return self.system_service
+    
+    def get_auth_service(self) -> AuthService:
+        """Получает сервис для авторизации"""
+        return self.auth_service

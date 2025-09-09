@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, FSInputFile, CallbackQuery
 from dotenv import load_dotenv
 from services.service_manager import ServiceManager
+from services.auth_service import require_auth, public_command
 import os
 
 # Загружаем переменные окружения
@@ -28,6 +29,7 @@ service_manager = ServiceManager()
 
 # Обработчик команды /start
 @dp.message(Command("start"))
+@public_command
 async def cmd_start(message: Message):
     await message.answer(
         "Привет! Я минимальный Telegram бот.\n"
@@ -36,18 +38,32 @@ async def cmd_start(message: Message):
 
 # Обработчик команды /help
 @dp.message(Command("help"))
+@public_command
 async def cmd_help(message: Message):
     await message.answer(
         "Доступные команды:\n"
         "/start - Начать работу с ботом\n"
         "/help - Показать это сообщение\n"
+        "/my_id - Показать ваш Telegram ID\n"
         "/info - Информация о сервере\n"
         "/create_user имя - Создать нового пользователя OpenVPN\n"
         "/get_all_users - Получить список всех пользователей и их .ovpn файлы\n"
     )
 
+# Обработчик команды /my_id
+@dp.message(Command("my_id"))
+@public_command
+async def cmd_my_id(message: Message):
+    user_id = message.from_user.id
+    await message.answer(
+        f"🆔 **Ваш Telegram ID:** `{user_id}`\n\n"
+        f"Передайте этот ID администратору для получения доступа к боту.",
+        parse_mode="Markdown"
+    )
+
 # Обработчик команды /info
 @dp.message(Command("info"))
+@require_auth
 async def cmd_info(message: Message):
     system_service = service_manager.get_system_service()
     server_info = system_service.format_system_info()
@@ -55,6 +71,7 @@ async def cmd_info(message: Message):
 
 # Обработчик команды /create_user
 @dp.message(Command("create_user"))
+@require_auth
 async def cmd_create_user(message: Message):
     # Извлекаем имя пользователя из команды
     command_parts = message.text.split()
@@ -142,6 +159,7 @@ async def cmd_create_user(message: Message):
 
 # Обработчик команды /get_all_users
 @dp.message(Command("get_all_users"))
+@require_auth
 async def cmd_get_all_users(message: Message):
     try:
         # Используем сервис для получения списка пользователей
@@ -190,6 +208,7 @@ async def show_users_page(message: Message, users: list, page: int = 0, edit_mes
 
 # Обработчик нажатий на кнопки скачивания
 @dp.callback_query(lambda c: c.data.startswith('download_'))
+@require_auth
 async def process_download_callback(callback_query: CallbackQuery):
     try:
         # Извлекаем имя пользователя из callback_data
@@ -220,6 +239,7 @@ async def process_download_callback(callback_query: CallbackQuery):
 
 # Обработчик нажатий на кнопки пагинации
 @dp.callback_query(lambda c: c.data.startswith('page_'))
+@require_auth
 async def process_page_callback(callback_query: CallbackQuery):
     try:
         # Извлекаем номер страницы из callback_data
