@@ -146,13 +146,36 @@ async def cmd_get_all_users(message: Message):
         # Сортируем файлы по имени
         ovpn_files.sort()
         
-        # Формируем список пользователей
-        users_list = "👥 **Список пользователей OpenVPN:**\n\n"
+        # Показываем первую страницу
+        await show_users_page(message, ovpn_files, 0)
+                
+    except Exception as e:
+        await message.answer(
+            f"❌ **Ошибка при получении списка пользователей:**\n\n`{str(e)}`",
+            parse_mode="Markdown"
+        )
+
+# Функция для отображения страницы пользователей
+async def show_users_page(message: Message, ovpn_files: list, page: int = 0, edit_message: bool = False):
+    try:
+        files_per_page = 10
+        total_files = len(ovpn_files)
+        total_pages = (total_files + files_per_page - 1) // files_per_page
         
-        # Создаем кнопки для каждого файла
+        # Вычисляем индексы для текущей страницы
+        start_idx = page * files_per_page
+        end_idx = min(start_idx + files_per_page, total_files)
+        
+        # Получаем файлы для текущей страницы
+        page_files = ovpn_files[start_idx:end_idx]
+        
+        # Формируем список пользователей для текущей страницы
+        users_list = f"👥 **Список пользователей OpenVPN** (стр. {page + 1}/{total_pages}):\n\n"
+        
+        # Создаем кнопки для файлов текущей страницы
         keyboard_buttons = []
         
-        for i, file_path in enumerate(ovpn_files, 1):
+        for i, file_path in enumerate(page_files, start_idx + 1):
             filename = os.path.basename(file_path)
             username = filename.replace('.ovpn', '')
             
@@ -170,17 +193,52 @@ async def cmd_get_all_users(message: Message):
                 )
             ])
         
-        users_list += f"\n📊 **Всего пользователей:** {len(ovpn_files)}\n\n"
+        users_list += f"\n📊 **Всего пользователей:** {total_files}\n"
         users_list += "💡 **Нажмите на кнопку ниже для скачивания файла:**"
         
-        # Создаем клавиатуру
-        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        # Добавляем кнопки навигации
+        navigation_buttons = []
         
-        await message.answer(users_list, parse_mode="Markdown", reply_markup=keyboard)
+        if total_pages > 1:
+            # Кнопки навигации
+            nav_row = []
+            
+            # Кнопка "Назад"
+            if page > 0:
+                nav_row.append(InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data=f"page_{page - 1}"
+                ))
+            
+            # Информация о странице
+            nav_row.append(InlineKeyboardButton(
+                text=f"{page + 1}/{total_pages}",
+                callback_data="page_info"
+            ))
+            
+            # Кнопка "Вперед"
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton(
+                    text="Вперед ➡️",
+                    callback_data=f"page_{page + 1}"
+                ))
+            
+            navigation_buttons.append(nav_row)
+        
+        # Объединяем кнопки файлов и навигации
+        all_buttons = keyboard_buttons + navigation_buttons
+        
+        # Создаем клавиатуру
+        keyboard = InlineKeyboardMarkup(inline_keyboard=all_buttons)
+        
+        if edit_message:
+            await message.edit_text(users_list, parse_mode="Markdown", reply_markup=keyboard)
+        else:
+            await message.answer(users_list, parse_mode="Markdown", reply_markup=keyboard)
                 
     except Exception as e:
         await message.answer(
-            f"❌ **Ошибка при получении списка пользователей:**\n\n`{str(e)}`",
+            f"❌ **Ошибка при отображении страницы:**\n\n`{str(e)}`",
             parse_mode="Markdown"
         )
 
@@ -210,6 +268,33 @@ async def process_download_callback(callback_query: CallbackQuery):
         
         # Подтверждаем нажатие кнопки
         await callback_query.answer(f"✅ Файл {username}.ovpn отправлен!")
+        
+    except Exception as e:
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+# Обработчик нажатий на кнопки пагинации
+@dp.callback_query(lambda c: c.data.startswith('page_'))
+async def process_page_callback(callback_query: CallbackQuery):
+    try:
+        # Извлекаем номер страницы из callback_data
+        page_data = callback_query.data.replace('page_', '')
+        
+        if page_data == "info":
+            await callback_query.answer("ℹ️ Информация о текущей странице", show_alert=False)
+            return
+        
+        page = int(page_data)
+        
+        # Получаем список всех .ovpn файлов
+        ovpn_dir = "/root/ovpns"
+        ovpn_files = glob.glob(os.path.join(ovpn_dir, "*.ovpn"))
+        ovpn_files.sort()
+        
+        # Показываем нужную страницу
+        await show_users_page(callback_query.message, ovpn_files, page, edit_message=True)
+        
+        # Подтверждаем нажатие кнопки
+        await callback_query.answer(f"📄 Страница {page + 1}")
         
     except Exception as e:
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
