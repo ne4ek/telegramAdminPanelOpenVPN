@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, FSInputFile, CallbackQuery
 from dotenv import load_dotenv
 from services.service_manager import ServiceManager
+import os
 
 # Загружаем переменные окружения
 load_dotenv()
